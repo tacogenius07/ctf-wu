@@ -74,29 +74,29 @@ char *vuln()
   return result;
 }
 ```
-- The program takes user input via fgets and passes it directly to printf without a safe format string specifier (e.g., printf("%s", format);). Furthermore, this logic is wrapped inside an infinite while(1) loop, allowing us to trigger the Format String vulnerability multiple times.
-- Since there is no win function (a hidden function that prints the flag), our ultimate goal is to overwrite a GOT entry to force the program to call system("/bin/sh")
+- The program takes user input via fgets and passes it directly to printf without a safe format string specifier (`printf("%s", format);`). Furthermore, this logic is wrapped inside an infinite `while(1)` loop, allowing us to trigger the Format String vulnerability multiple times.
+- Since there is no `win` function (a hidden function that prints the flag), our ultimate goal is to overwrite a GOT entry to force the program to call `system("/bin/sh")`
 ## III. Exploitation Strategy
 - Our exploit will consist of 3 stages, taking advantage of the infinite loop:
   1. **Find the Offset:** Determine the position of our payload on the stack.
-  2. **Leak Libc:** Leak the real memory address of a resolved libc function (we'll use puts@GOT) to calculate the libc base address and subsequently the system function address.
-  3. **GOT Overwrite & Pop Shell:** Overwrite the printf@GOT entry with the address of system. In the next loop iteration, we simply pass /bin/sh as our input to execute system("/bin/sh").
+  2. **Leak Libc:** Leak the real memory address of a resolved libc function (we'll use `puts@GOT`) to calculate the libc base address and subsequently the system function address.
+  3. **GOT Overwrite & Pop Shell:** Overwrite the `printf@GOT` entry with the address of `system`. In the next loop iteration, we simply pass `/bin/sh` as our input to execute `system("/bin/sh")`.
 ## IV. Execution
 #### Step 1: Finding the Format String Offset 
-- We send a test payload containing a recognizable string (AAAA) along with %p format specifiers to locate our input on the stack:
+- We send a test payload containing a recognizable string `(AAAA)` along with %p format specifiers to locate our input on the stack:
   - **Input:** AAAA.%p.%p.%p.%p.%p.%p
   - **Output:** AAAA.0x250.0xf7f625c0.0xf7f62d40.0x41414141.0x2e70252e.0x252e7025
 - The value 0x41414141 (the hex representation of AAAA) appears at the 4th parameter. Thus, our offset = 4.
 #### Step 2: Leaking Libc Address
-- We need to read the content stored at puts@GOT. By placing the puts@GOT address at the beginning of our payload and using %4$s, printf will dereference the 4th argument (our address) and print the string at that memory location.
+- We need to read the content stored at `puts@GOT`. By placing the `puts@GOT` address at the beginning of our payload and using %4$s, `printf` will dereference the 4th argument (our address) and print the string at that memory location.
 ```python
   payload_leak = p32(elf.got['puts']) + b"%4$s"
 ```
-- The response gives us the actual address of puts inside the dynamically loaded libc. From there, we can calculate libc.address and system_addr.
+- The response gives us the actual address of puts inside the dynamically loaded libc. From there, we can calculate `libc.address` and `system_addr`.
 #### Step 3 : GOT Overwrite
-- Overwrite printf@GOT with system_addr
+- Overwrite `printf@GOT` with `system_addr`
 #### Step 4: Popping the Shell
-- At this point, printf has been hijacked and essentially turned into system. When the program loops back and asks for the design input, we simply send /bin/sh. The program will execute printf(format), which is now equivalent to system("/bin/sh").
+- At this point, `printf` has been hijacked and essentially turned into system. When the program loops back and asks for the design input, we simply send `/bin/sh`. The program will execute `printf(format)`, which is now equivalent to `system("/bin/sh")`.
 ## V. Exploit Script
 ```python
 from pwn import *
