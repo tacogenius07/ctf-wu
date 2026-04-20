@@ -1,12 +1,22 @@
 ## I. Reconnaissance
 
 - FILE
-
-  ![](./image/1.png)
+```D
+factory-monitor: ELF 64-bit LSB pie executable, x86-64, version 1 (GNU/Linux), static-pie linked, BuildID[sha1]=008725930ea8f340dcf34257ebd53ed1be30cc70, for GNU/Linux 3.2.0, with debug_info, not stripped
+```
 
 - Checksec
-
-  ![](./image/2.png)
+```D
+    Arch:       amd64-64-little
+    RELRO:      Full RELRO
+    Stack:      Canary found
+    NX:         NX enabled
+    PIE:        PIE enabled
+    SHSTK:      Enabled
+    IBT:        Enabled
+    Stripped:   No
+    Debuginfo:  Yes
+```
   #### Key Takeaways:
   
    * **Architecture (64-bit/amd64)**
