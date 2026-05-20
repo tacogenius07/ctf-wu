@@ -3,8 +3,8 @@
 #### Tìm hiểu về challenge
 ![](./image/1.png)
 ![](./image/2.png)
-- Có thể thấy đây là binary ARM 32-bit, chạy cho vi điều khiển Cortex-M3. Điểm quan trọng là bài này không dùng ld.so hay libc theo kiểu chương trình Linux thông thường
-- Khi mở file trong IDA64, điều đầu tiên mình làm là xác định các hàm chính liên quan đến protocol. Từ danh sách function trong IDA, có thể nhận ra một số hàm quan trọng như:
+- Đầu tiên, chúng ta xác định đây là binary ARM 32-bit, chạy cho vi điều khiển Cortex-M3. Điểm quan trọng là bài này không dùng ld.so hay libc theo kiểu chương trình Linux thông thường
+- Khi mở file trong IDA64, điều đầu tiên mình làm là xác định các hàm chính liên quan đến protocol. Từ danh sách function trong IDA, có thể nhận ra một số hàm quan trọng như sau :
     - process_packets
     - handle_upload
     - handle_verify
@@ -407,7 +407,8 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-
+- Chạy PoC ở local , thành công in ra flag
+![](./image/7.png)
 
 
 
