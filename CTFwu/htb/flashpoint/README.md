@@ -407,7 +407,11 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-- Chạy PoC ở local , thành công in ra flag
+- Chạy PoC và debug ở local , khi dừng tại đầu hàm handle_verify và dump vùng update context ở 0x200081e0, có thể thấy dữ liệu trong context đã bị ghi đè bởi payload từ bước UPLOAD. Cụ thể, trường đầu tiên tại 0x200081e0 đã mang giá trị 0x00018000, chính là địa chỉ vùng flash nơi remote service map flag.txt. Đồng thời, trường callback tại 0x200081f4 đã mang giá trị 0x00000173, tương ứng với hàm mem_dump ở chế độ Thumb. Trạng thái tại 0x200081f0 = 2 cho thấy firmware coi quá trình upload là hoàn tất, vì vậy lệnh VERIFY sẽ tiếp tục gọi callback thay vì trả về lỗi.
+![](./image/8.png)
+![](./image/9.png)
+![](./image/10.png)
+- Tiếp tục chạy chương trình, thành công in ra flag
 ![](./image/7.png)
 
 
