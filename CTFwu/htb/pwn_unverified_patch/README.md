@@ -8,18 +8,9 @@ Write-up được viết bởi Hoàng Minh Quân - sinh viên ngành Kỹ thuậ
 ![](./image/1.png)
 
 
+Mình nhận ra hướng khai thác của bài nằm ở cách challenge sử dụng MQTT.
 
-Mình nhận ra hướng khai thác thật của bài này lại không nằm ở binary, mà nằm ở cách challenge sử dụng MQTT.
-
-Ý tưởng cốt lõi của bài là flag được publish lên broker dưới dạng `retained message`, trong khi broker lại cho phép anonymous client subscribe bằng wildcard. Chỉ cần hiểu đúng hai tính năng này là có thể lấy lại flag mà không cần biết chính xác topic chứa nó.
-
-Với những challenge có cả binary lẫn script phụ trợ, mình thường không lao ngay vào reverse. Thay vào đó, mình đọc theo thứ tự:
-
-1. Script khởi động service
-2. File config
-3. Script phụ trợ
-4. Script solve nếu có
-5. Cuối cùng mới quay lại binary
+Ý tưởng của bài là flag được publish lên broker dưới dạng `retained message`, trong khi broker lại cho phép anonymous client subscribe bằng wildcard. Chỉ cần hiểu đúng hai tính năng này là có thể lấy lại flag mà không cần biết chính xác topic chứa nó.
 
 ## Step 1: Xem challenge thật sự đang chạy gì
 
@@ -43,7 +34,7 @@ Nhìn vào đây thì có thể rút ra ngay hai ý chính:
 1. Service chính của challenge là `mosquitto`
 2. Cứ mỗi `10 giây` sẽ có một script tên `flag_planter.py` được chạy
 
-Điều này khá quan trọng, vì nó cho mình cảm giác rằng flag không chỉ được lưu ở đâu đó trong filesystem, mà đang được bơm vào service theo chu kỳ. Nói cách khác, để lấy được flag thì rất có thể mình phải quan sát cách `flag_planter.py` tương tác với broker.
+-> flag được bơm vào service theo chu kỳ
 
 
 ## Step 2: Mosquitto là gì?
@@ -78,7 +69,7 @@ log_dest stderr
 persistence false
 ```
 
-Dòng mình để ý ngay lập tức là:
+Mình để ý đến dòng này: 
 
 ```conf
 allow_anonymous true
@@ -90,10 +81,6 @@ allow_anonymous true
 - không cần username
 - không cần password
 - không có cơ chế kiểm soát truy cập rõ ràng trong config này
-
-Đến đây thì mình bắt đầu nghiêng hẳn sang hướng logic flaw. Một broker cho phép anonymous access mà lại có script định kỳ bơm flag vào, thì khả năng rất cao là flag đang bị “lộ theo thiết kế”.
-
-Trong một hệ thống thật, đây là cấu hình khá nguy hiểm nếu có dữ liệu nhạy cảm. Còn trong bài CTF này, nó gần như là lời gợi ý trực tiếp rằng mình nên thử đóng vai một MQTT client bình thường.
 
 ## Step 4: Tìm hiểu `flag_planter.py`
 
@@ -160,8 +147,7 @@ if __name__ == "__main__":
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 1883
     plant_flag(host, port)
 ```
-
-Sau khi đọc xong script này, mình thấy bức tranh gần như đã rõ. Script làm ba việc:
+Script làm ba việc:
 
 1. Đọc flag từ `flag.txt`
 2. Kết nối tới MQTT broker
@@ -184,9 +170,9 @@ Ví dụ topic có thể trông như thế này:
 550e8400-e29b-41d4-a716-446655440000
 ```
 
-Thoạt đầu, mình nghĩ đây là một cơ chế che giấu hợp lý: nếu topic thay đổi ngẫu nhiên mỗi lần publish, người ngoài sẽ khó mà đoán đúng topic để subscribe.
+Thoạt đầu, mình nghĩ đây là một cơ chế bảo mật hợp lý: nếu topic thay đổi ngẫu nhiên mỗi lần publish, người ngoài sẽ khó mà đoán đúng topic để subscribe.
 
-Nhưng MQTT không bắt người dùng phải biết chính xác topic. Nó hỗ trợ wildcard, và đó chính là thứ khiến cách che giấu này không còn hiệu quả nữa.
+Nhưng MQTT không bắt người dùng phải biết chính xác topic. Nó hỗ trợ wildcard, và đây chính là điểm mà chúng ta có thể khai thác
 
 
 ## Step 6: Flag được publish dưới dạng retained message
@@ -206,8 +192,6 @@ Trong MQTT:
 Nghĩa là `0x31` tương đương với một `PUBLISH` có bật `retain = 1`.
 
 ### Retained message là gì?
-
-Đây là khái niệm rất quan trọng để hiểu bài.
 
 Bình thường, nếu một publisher gửi message lên broker thì chỉ những subscriber nào đang online và subscribe đúng topic mới nhận được. Sau đó message trôi qua, client mới vào sau sẽ không thấy lại message cũ.
 
